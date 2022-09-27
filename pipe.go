@@ -1,7 +1,7 @@
 /*
-Package pipe implements several buffered pipe types of infinite size.
+Package bufpipe implements several buffered pipe types of infinite size.
 */
-package pipe
+package bufpipe
 
 import (
 	"context"

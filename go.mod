@@ -1,3 +1,3 @@
-module github.com/mixcode/golib-pipe
+module github.com/mixcode/golib-bufpipe
 
 go 1.18

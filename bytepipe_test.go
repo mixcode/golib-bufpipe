@@ -1,4 +1,4 @@
-package pipe
+package bufpipe
 
 import (
 	"io"
