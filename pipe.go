@@ -1,3 +1,6 @@
+/*
+Package pipe implements several buffered pipe types of infinite size.
+*/
 package pipe
 
 import (
@@ -8,11 +11,12 @@ import (
 )
 
 var (
-	ErrNoData = fmt.Errorf("no data") // no data is in FifoQueue
+	ErrNoData = fmt.Errorf("no data") // No data in the Pipe[T]
 )
 
-// pipe is a queue with Closer() and Receive().
-// Please note that this object does NOT implmentes io.PipeReader and io.PipeWriter interface.
+// Pipe is a FIFO queue that can be closed with Close().
+// When closed, the read functions will return io.EOF when no data left.
+// Please note that this object does NOT suits for io.PipeReader and io.PipeWriter interface.
 // Especially, Close() closes the stream on write side, but the data remains OK on the read side.
 type Pipe[T any] struct {
 	queue *Queue[T]
@@ -81,10 +85,10 @@ func (q *Pipe[T]) Fetch() (v T, err error) {
 	return
 }
 
-// Read a data from the pipe.
-// This function blocks until a new data is received or the pipe is closed.
+// Receive a data from the pipe.
+// This function blocks until a new data is received, the pipe is closed, or the ctx.Done() is done.
 // Returns io.EOF if the pipe is closed and no data left.
-func (q *Pipe[T]) Read(ctx context.Context) (p T, err error) {
+func (q *Pipe[T]) Receive(ctx context.Context) (p T, err error) {
 	// Increase the waiting Read() count
 	atomic.AddInt32(&q.blockingReadCount, 1)
 	defer atomic.AddInt32(&q.blockingReadCount, -1)

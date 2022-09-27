@@ -6,7 +6,8 @@ import (
 	"sync/atomic"
 )
 
-// A lock-free one-time notification channel that can be cancelled from the initialization side.
+// A lock-free one-time notification channel that can be cancelled.
+// NotifyCh internally uses a channel which is closed when notified.
 type NotifyCh[T any] struct {
 	Value     T
 	Cancelled bool
@@ -15,7 +16,7 @@ type NotifyCh[T any] struct {
 	flagReceive, flagSend int32
 }
 
-// Create a channel
+// Create a notification channel.
 func NewNotifyCh[T any]() *NotifyCh[T] {
 	ch := make(chan any)
 	return &NotifyCh[T]{
@@ -23,9 +24,10 @@ func NewNotifyCh[T any]() *NotifyCh[T] {
 	}
 }
 
-// Get the notification channel.
-// If the channel is already fetched or used, then returns nil.
-// If the fetched channel is not used, then the channel may returned using UnfetchChannel().
+// Get a one-time channel for detecting notification, usually to mux with select{}.
+// The returning channel will be closed when notificaion is sent or cancelled.
+// The function returns nil if the channel is already fetched or notified.
+// If the user does NOT consumed the returned channel for some reason, then the channel should be reverted to unreferenced state using UnfetchChannel().
 func (c *NotifyCh[T]) FetchChannel() chan any {
 	if c.flagReceive == 0 {
 		if atomic.CompareAndSwapInt32(&c.flagReceive, 0, 1) {
@@ -35,7 +37,7 @@ func (c *NotifyCh[T]) FetchChannel() chan any {
 	return nil
 }
 
-// Return the channel fetched by FetchChannel().
+// Revert the channel fetched by FetchChannel() to unused state.
 // Do not return if the channel is notified / closed.
 func (c *NotifyCh[T]) UnfetchChannel(ch chan any) bool {
 	if ch != c.ch {
@@ -79,18 +81,40 @@ func (c *NotifyCh[T]) Cancel() bool {
 	return false
 }
 
-// Wait for the notification channel.
-// If the channel is notified, then the notification status is
+// Cancel the notification channel setting the value.
+// Returns false if the channel is already notified or cancelled.
+func (c *NotifyCh[T]) CancelWithValue(value T) bool {
+	ch := c.fetchSendChannel()
+	if ch != nil {
+		c.Value, c.Cancelled = value, true
+		close(ch)
+		return true
+	}
+	return false
+}
+
+// Wait for the notification.
+// This function blocks until a Notify() or Cancel() call, or ctx.Done() is done.
+// Returned value is the value set by Notify() or CancelWithValue().
+// The returned err is nil if the notification is sent by Notify().
+// The err is io.ErrClosedPipe if cancelled, and will be io.EOF if already used.
+// If the functions terminated by the provided context, then err is the error of the context, or context.Cancelled.
 func (c *NotifyCh[T]) Wait(ctx context.Context) (value T, err error) {
 	ch := c.FetchChannel()
 	if ch == nil {
 		// alread closed or disabled
-		return c.Value, io.ErrClosedPipe
+		return c.Value, io.EOF
 	}
 	select {
 
 	case <-ch:
-		return c.Value, nil
+		value = c.Value
+		if c.Cancelled {
+			err = io.ErrClosedPipe
+		} else {
+			err = nil
+		}
+		return
 
 	case <-ctx.Done():
 		err = ctx.Err()

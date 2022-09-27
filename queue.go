@@ -5,7 +5,7 @@ import (
 	"unsafe"
 )
 
-// A Lock-free queue.
+// A lock-free, first-in-first-out queue.
 // https://www.cs.rochester.edu/u/scott/papers/1996_PODC_queues.pdf
 type Queue[T any] struct {
 	head, tail unsafe.Pointer
@@ -75,6 +75,7 @@ func (q *Queue[T]) Dequeue() (value T, ok bool) {
 	}
 }
 
+// Number of entries in the queue.
 func (q *Queue[T]) Len() int {
 	return int(q.size)
 }

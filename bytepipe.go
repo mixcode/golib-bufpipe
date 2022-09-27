@@ -5,19 +5,26 @@ import (
 	"io"
 )
 
-// A Pipe for []Byte with io.ReadWriteCloser and io.ReadFrom interface.
+// A Pipe of []Byte with io.Reader, io.WriteCloser and io.ReadFrom interface.
 type BytePipe struct {
-	*Pipe[[]byte]
+	Pipe[[]byte] // Pipe of []byte data block
 
-	activeBuf []byte
+	ReadFromSize int // size of []byte data blocks created by ReadFrom()
+	activeBuf    []byte
 }
+
+var (
+	ReadFromBufSize = 1 * 1024 * 1024 // default size for BytePipe.ReadFromSize
+)
 
 // Create a new BytePipe.
 func NewBytePipe() *BytePipe {
-	return &BytePipe{Pipe: NewPipe[[]byte]()}
+	return &BytePipe{Pipe: *NewPipe[[]byte](), ReadFromSize: ReadFromBufSize}
 }
 
 // io.Reader inteface for BytePipe.
+// The data is internally copied from the Pipe to the provided buffer.
+// Use Fetch() or Receive() for zero-copy data receiving.
 func (bp *BytePipe) Read(p []byte) (n int, err error) {
 
 	if bp.readClosed && len(bp.activeBuf) == 0 {
@@ -40,7 +47,7 @@ func (bp *BytePipe) Read(p []byte) (n int, err error) {
 			if err == io.EOF {
 				return
 			}
-			bp.activeBuf, err = bp.Pipe.Read(context.Background())
+			bp.activeBuf, err = bp.Pipe.Receive(context.Background())
 			if err != nil {
 				return
 			}
@@ -56,24 +63,24 @@ func (bp *BytePipe) Read(p []byte) (n int, err error) {
 }
 
 // io.Closer for io.WriteCloser, but not for io.ReadCloser.
-// Closing it prevents data from writing, but Read()/Fetch()/Receive() is valid until io.EOF reached.
-// Check for returning io.EOF, or IsEOF() to know the end of the stream.
+// Closing BytePipe prevents data from writing, but Read()/Fetch()/Receive() are OK until io.EOF reached.
+// Check for returning io.EOF, or EOF() to know the end of the stream.
 func (bp *BytePipe) Close() bool {
 	return bp.Pipe.Close()
 }
 
 // Check if the BytePipe is closed and no data left for read.
-func (bp *BytePipe) IsEOF() bool {
+func (bp *BytePipe) EOF() bool {
 	return bp.readClosed && len(bp.activeBuf) == 0
 }
 
-var (
-	ReadFromBufSize = 1 * 1024 * 1024
-)
-
 // io.ReaderFrom interface for BytePipe.
+// Incoming data are partitioned into multiple []byte of bp.ReadFromSize and stored.
 func (bp *BytePipe) ReadFrom(r io.Reader) (n int64, err error) {
-	bufSize := ReadFromBufSize
+	bufSize := bp.ReadFromSize
+	if bufSize == 0 {
+		bufSize = ReadFromBufSize
+	}
 	for {
 		buf := make([]byte, bufSize)
 		sz, e := io.ReadFull(r, buf)
@@ -94,7 +101,7 @@ func (bp *BytePipe) ReadFrom(r io.Reader) (n int64, err error) {
 }
 
 // io.Writer interface for BytePipe.
-// The provided data is internally copied when writing.
+// The data is copied from the provided buffer to an internal buffer when writing.
 // Use Append() for zero-copy data passing.
 func (bp *BytePipe) Write(p []byte) (n int, err error) {
 	l := len(p)

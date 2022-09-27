@@ -88,7 +88,7 @@ func TestPipe(t *testing.T) {
 		defer wg.Done()
 		c := 0
 		for {
-			n, err := rq.Read(context.Background())
+			n, err := rq.Receive(context.Background())
 			if err == io.EOF {
 				break
 			}
@@ -149,7 +149,7 @@ func TestPipe(t *testing.T) {
 			go func(k int) {
 				defer outWg.Done()
 				for {
-					n, err := queue1.Read(context.Background())
+					n, err := queue1.Receive(context.Background())
 					if err == io.EOF {
 						// no more data
 						break
